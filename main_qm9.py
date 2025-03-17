@@ -96,40 +96,58 @@ def main():
 
     print("Start training!")
     best_val_loss = None
-    for epoch in range(args.epochs):
-        loss_all = 0
-        step = 0
-        model.train()
-        for data in train_loader:
-            data = data.to(device)
-            optimizer.zero_grad()
+    from tqdm import tqdm
+    import os
+    import os.path as osp
 
-            output = model(data)
-            loss = F.l1_loss(output, data.y)
-            loss_all += loss.item() * data.num_graphs
-            loss.backward()
-            clip_grad_norm_(model.parameters(), max_norm=1000, norm_type=2)
-            optimizer.step()
+    with tqdm(total=args.epochs, desc="Epochs", unit="epoch") as epoch_bar:
+        for epoch in range(args.epochs):
+            model.train()
+            loss_all = 0
+            step = 0
+            with tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}", unit="batch", leave=False) as batch_bar:
+                for data in batch_bar:
+                    data = data.to(device)
+                    optimizer.zero_grad()
 
-            curr_epoch = epoch + float(step) / (len(train_dataset) / args.batch_size)
-            scheduler_warmup.step(curr_epoch)
+                    output = model(data)
+                    loss = F.l1_loss(output, data.y)
+                    loss_all += loss.item() * data.num_graphs
 
-            ema(model)
-            step += 1
-        loss = loss_all / len(train_loader.dataset)
-        val_loss = test(model, val_loader, ema, device)
+                    loss.backward()
+                    clip_grad_norm_(model.parameters(), max_norm=1000, norm_type=2)
+                    optimizer.step()
 
-        save_folder = osp.join(".", "save", args.dataset)
-        if not osp.exists(save_folder):
-            os.makedirs(save_folder)
+                    # Update scheduler with a fractional epoch value
+                    curr_epoch = epoch + float(step) / (len(train_dataset) / args.batch_size)
+                    scheduler_warmup.step(curr_epoch)
 
-        if best_val_loss is None or val_loss <= best_val_loss:
-            test_loss = test(model, test_loader, ema, device)
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), osp.join(save_folder, "best_model.h5"))
+                    ema(model)
+                    step += 1
 
-        print('Epoch: {:03d}, Train MAE: {:.7f}, Val MAE: {:.7f}, '
-            'Test MAE: {:.7f}'.format(epoch+1, loss, val_loss, test_loss))
+                    # Update inner progress bar with the current loss value
+                    batch_bar.set_postfix(loss=f"{loss.item():.6f}")
+
+            # Compute overall loss for the epoch
+            loss_epoch = loss_all / len(train_loader.dataset)
+            val_loss = test(model, val_loader, ema, device)
+
+            # Save best model if validation loss improves
+            save_folder = osp.join(".", "save", args.dataset)
+            if not osp.exists(save_folder):
+                os.makedirs(save_folder)
+            if best_val_loss is None or val_loss <= best_val_loss:
+                test_loss = test(model, test_loader, ema, device)
+                best_val_loss = val_loss
+                torch.save(model.state_dict(), osp.join(save_folder, "best_model.h5"))
+
+            # Log epoch metrics to console
+            tqdm.write(
+                f"Epoch: {epoch+1:03d}, Train MAE: {loss_epoch:.7f}, Val MAE: {val_loss:.7f}, Test MAE: {test_loss:.7f}"
+            )
+            # Update outer progress bar with epoch metrics
+            epoch_bar.update(1)
+            epoch_bar.set_postfix({"Train MAE": f"{loss_epoch:.7f}", "Val MAE": f"{val_loss:.7f}"})
     print('Best Validation MAE:', best_val_loss)
     print('Testing MAE:', test_loss)
 
