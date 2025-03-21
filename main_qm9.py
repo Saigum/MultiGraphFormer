@@ -9,6 +9,7 @@ import torch.optim as optim
 from torch.nn.utils import clip_grad_norm_
 from torch_geometric.data import DataLoader
 from warmup_scheduler import GradualWarmupScheduler
+import matplotlib.pyplot as plt
 
 from models import PAMNet, PAMNet_s, Config
 from utils import EMA
@@ -99,6 +100,9 @@ def main():
     from tqdm import tqdm
     import os
     import os.path as osp
+    train_losses = []
+    val_losses = []
+    test_losses = []
 
     with tqdm(total=args.epochs, desc="Epochs", unit="epoch") as epoch_bar:
         for epoch in range(args.epochs):
@@ -131,6 +135,9 @@ def main():
             # Compute overall loss for the epoch
             loss_epoch = loss_all / len(train_loader.dataset)
             val_loss = test(model, val_loader, ema, device)
+             # Save losses for plotting
+            train_losses.append(loss_epoch)
+            val_losses.append(val_loss)
 
             # Save best model if validation loss improves
             save_folder = osp.join(".", "save", args.dataset)
@@ -151,6 +158,14 @@ def main():
     print('Best Validation MAE:', best_val_loss)
     print('Testing MAE:', test_loss)
 
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, args.epochs+1), train_losses, label="Train MAE")
+    plt.plot(range(1, args.epochs+1), val_losses, label="Validation MAE")
+    plt.xlabel("Epoch")
+    plt.ylabel("MAE")
+    plt.title("Training, Validation and Test MAE per Epoch")
+    plt.legend()
+    plt.savefig("save/train_mae.jpg")
 
 if __name__ == "__main__":
     main()
