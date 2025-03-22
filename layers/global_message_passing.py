@@ -63,6 +63,28 @@ class Global_MessagePassing(MessagePassing):
 
 
 class Global_MessagePassing_attn(Global_MessagePassing):
+    def __init__(self, config):
+        super(Global_MessagePassing, self).__init__(flow=config.flow)
+        self.dim = config.dim
+
+        self.mlp_x1 = MLP([self.dim, self.dim])
+        self.mlp_x2 = MLP([self.dim, self.dim])
+
+        self.res1 = Res(self.dim)
+        self.res2 = Res(self.dim)
+        self.res3 = Res(self.dim)
+
+        self.mlp_m = MLP([self.dim * 3, self.dim])
+        self.W_edge_attr = nn.Linear(self.dim, self.dim, bias=False)
+
+        self.mlp_out = MLP([self.dim, self.dim, self.dim, self.dim])
+        self.W_out = nn.Linear(self.dim, 1)
+        self.W = nn.Parameter(torch.Tensor(self.dim, 1))
+        self.W_query = nn.Linear(self.dim,self.dim)
+        self.W_key = nn.Linear(self.dim,self.dim)
+
+        self.init()
+
     def message(self, x_i, x_j, edge_attr):
         m = torch.cat([x_i, x_j, edge_attr], dim=-1)
         m = self.mlp_m(m)
