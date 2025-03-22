@@ -10,7 +10,7 @@ from torch.nn.utils import clip_grad_norm_
 from torch_geometric.data import DataLoader
 from warmup_scheduler import GradualWarmupScheduler
 import matplotlib.pyplot as plt
-
+from tqdm import tqdm
 from models import PAMNet, PAMNet_s, Config
 from utils import EMA
 from datasets import QM9
@@ -97,9 +97,6 @@ def main():
 
     print("Start training!")
     best_val_loss = None
-    from tqdm import tqdm
-    import os
-    import os.path as osp
     train_losses = []
     val_losses = []
     test_losses = []
