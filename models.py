@@ -6,7 +6,7 @@ from torch_sparse import SparseTensor
 from torch_geometric.nn import global_mean_pool, global_add_pool, radius, knn
 from torch_geometric.utils import remove_self_loops
 
-from layers import Global_MessagePassing, Local_MessagePassing, Local_MessagePassing_s, \
+from layers import Global_MessagePassing,Global_MessagePassing_attn, Local_MessagePassing, Local_MessagePassing_s, \
     BesselBasisLayer, SphericalBasisLayer, MLP
 
 class Config(object):
@@ -351,3 +351,41 @@ class PAMNet_s(nn.Module):
         out = global_add_pool(out, batch)
 
         return out.view(-1)
+
+class PAMNet_a(PAMNet):
+        def __init__(self, config: Config, num_spherical=7, num_radial=6, envelope_exponent=5):
+            super(PAMNet, self).__init__()
+
+            self.dataset = config.dataset
+            self.dim = config.dim
+            self.n_layer = config.n_layer
+            self.cutoff_l = config.cutoff_l
+            self.cutoff_g = config.cutoff_g
+
+            if self.dataset[:3].lower() == "rna":
+                self.embeddings = nn.Parameter(torch.ones((3, self.dim))) # only C, N, O atoms for RNA
+            else:
+                self.embeddings = nn.Parameter(torch.ones((5, self.dim)))
+                self.init_linear = nn.Linear(18, self.dim, bias=False)
+
+            self.rbf_g = BesselBasisLayer(16, self.cutoff_g, envelope_exponent)
+            self.rbf_l = BesselBasisLayer(16, self.cutoff_l, envelope_exponent)
+            self.sbf = SphericalBasisLayer(num_spherical, num_radial, self.cutoff_l, envelope_exponent)
+
+            self.mlp_rbf_g = MLP([16, self.dim])
+            self.mlp_rbf_l = MLP([16, self.dim])    
+            self.mlp_sbf1 = MLP([num_spherical * num_radial, self.dim])
+            self.mlp_sbf2 = MLP([num_spherical * num_radial, self.dim])
+
+            self.global_layer = torch.nn.ModuleList()
+            for _ in range(config.n_layer):
+                self.global_layer.append(Global_MessagePassing_attn(config))
+
+            self.local_layer = torch.nn.ModuleList()
+            for _ in range(config.n_layer):
+                self.local_layer.append(Local_MessagePassing(config))
+
+            self.softmax = nn.Softmax(dim=-1)
+
+            self.init()
+

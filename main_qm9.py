@@ -11,7 +11,7 @@ from torch_geometric.data import DataLoader
 from warmup_scheduler import GradualWarmupScheduler
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from models import PAMNet, PAMNet_s, Config
+from models import PAMNet, PAMNet_s, Config,PAMNet_a
 from utils import EMA
 from datasets import QM9
 
@@ -42,7 +42,7 @@ def main():
     parser.add_argument('--gpu', type=int, default=0, help='GPU number.')
     parser.add_argument('--seed', type=int, default=480, help='Random seed.')
     parser.add_argument('--dataset', type=str, default='QM9', help='Dataset to be used')
-    parser.add_argument('--model', type=str, default='PAMNet', choices=['PAMNet', 'PAMNet_s'], help='Model to be used')
+    parser.add_argument('--model', type=str, default='PAMNet', choices=['PAMNet','PAMNet_a', 'PAMNet_s'], help='Model to be used')
     parser.add_argument('--epochs', type=int, default=300, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=1e-4, help='Initial learning rate.')
     parser.add_argument('--wd', type=float, default=0, help='Weight decay (L2 loss).')
@@ -86,6 +86,8 @@ def main():
 
     if args.model == 'PAMNet':
         model = PAMNet(config).to(device)
+    elif args.model == "PAMNet_a":
+        model = PAMNet_a(config).to(device)
     else:
         model = PAMNet_s(config).to(device)
     print("Number of model parameters: ", count_parameters(model))

@@ -53,8 +53,22 @@ class Global_MessagePassing(MessagePassing):
         m = torch.cat((x_i, x_j, edge_attr), -1)
         m = self.mlp_m(m)
 
+        ##the below self.W_edge_attr@edge_attr,is supposed to represent an attention computation,
+        ## based on edge feautures, i'm gonna try a direct attention_score
         return m * self.W_edge_attr(edge_attr)
 
     def update(self, aggr_out):
 
         return aggr_out
+
+
+class Global_MessagePassing_attn(Global_MessagePassing):
+    def message(self, x_i, x_j, edge_attr):
+        m = torch.cat([x_i, x_j, edge_attr], dim=-1)
+        m = self.mlp_m(m)
+        query = self.W_query(x_i)
+        key = self.W_key(x_j)
+        value = m
+        attention_scores = (query * key).sum(dim=-1, keepdim=True) / torch.sqrt(torch.tensor(self.dim, dtype=torch.float))
+        attention_weights = torch.softmax(attention_scores, dim=-2)
+        return value * attention_weights
