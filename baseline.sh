@@ -15,4 +15,4 @@ cd MultiGraphFormer
 uv venv pamnet && source pamnet/bin/activate
 uv pip install -r requirements.txt
 
-python -u main_qm9.py --dataset 'QM9' --model 'PAMNet' --target=7 --epochs=900 --batch_size=32 --dim=128 --n_layer=6 --lr=1e-4
+python -u main_qm9.py --dataset 'QM9' --model 'PAMNet' --target=7 --epochs=200 --batch_size=32 --dim=128 --n_layer=6 --lr=1e-4
