@@ -12,7 +12,8 @@ conda deactivate
 mkdir /scratch/saigum && cd /scratch/saigum
 git clone "https://github.com/Saigum/MultiGraphFormer.git"
 cd MultiGraphFormer
-uv venv pamnet && source pamnet/bin/activate
+module load u18/python/3.7.4
+uv venv pamnet --python 3.7.4 && source pamnet/bin/activate
 uv pip install -r requirements.txt
 
 python -u main_qm9.py --dataset 'QM9' --model 'PAMNet' --target=7 --epochs=200 --batch_size=32 --dim=128 --n_layer=6 --lr=1e-4
