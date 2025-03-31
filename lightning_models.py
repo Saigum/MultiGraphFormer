@@ -8,9 +8,8 @@ from torch_geometric.utils import remove_self_loops
 
 from layers import Global_MessagePassing,Global_MessagePassing_attn, Local_MessagePassing, Local_MessagePassing_s, \
     BesselBasisLayer, SphericalBasisLayer, MLP
-import lightning as L
+import pytorch_lightning as L
 import torch
-from lightning.pytorch.demos import Transformer
 from models import Config
 from utils import EMA
 
