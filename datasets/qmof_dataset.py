@@ -12,7 +12,7 @@ class QMOF(InMemoryDataset):
     processed_file_names = ['data.pt']
 
     def __init__(self, root, transform=None, pre_transform=None,
-                 pre_filter=None, cutoff: float = 5.0):
+                 pre_filter=None, cutoff: float = 5.0,target_column="bandgap"):
         """
         Args:
             root (str): Root directory. Expects
@@ -23,14 +23,14 @@ class QMOF(InMemoryDataset):
         super().__init__(root, transform, pre_transform, pre_filter)
         # Load processed data
         self.data, self.slices = torch.load(self.processed_paths[0])
-
+        self.target_column = target_column
     @property
     def raw_dir(self):
         return os.path.join(self.root, 'qmof_database')
     
     @property
     def raw_file_names(self):
-        return ["qmof_structure_data.json","qmof_changed.json"]
+        return ["qmof_structure_data.json","qmof.json"]
     
     @property
     def processed_dir(self):
@@ -63,7 +63,8 @@ class QMOF(InMemoryDataset):
         }
 
         self.PROPERTY_DATA = {
-            d["qmof_id"] : d[""]
+            d["qmof_id"] : d["outputs"]["pbe"][self.target_column] 
+            for d in properties
         }
         # 3) Convert each entry to a torch_geometric.data.Data
         data_list = []
@@ -98,15 +99,18 @@ class QMOF(InMemoryDataset):
                 edge_index.append([i,index])
 
         edge_index = torch.tensor(edge_index,dtype=torch.int32).T
-        # Edge attr = distance
         row, col = edge_index
         edge_attr = (coords[row] - coords[col]).norm(dim=1, keepdim=True)
+
+
+        y = torch.tensor(self.PROPERTY_DATA[mol_id], dtype=torch.float).view(-1, 1)
 
         data = Data(
             x=x,
             pos=coords,
             edge_index=edge_index,
             edge_attr=edge_attr,
+            y=y,
             mol_id=mol_id,
             name=self.ID2NAME[mol_id]
         )
