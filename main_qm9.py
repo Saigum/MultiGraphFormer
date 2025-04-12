@@ -10,16 +10,11 @@ from torch.nn.utils import clip_grad_norm_
 from torch_geometric.data import DataLoader
 from warmup_scheduler import GradualWarmupScheduler
 import matplotlib.pyplot as plt
-
-from models import PAMNet, PAMNet_s, Config, PAMNet_a
+from tqdm import tqdm
+from models import PAMNet, PAMNet_s, Config,PAMNet_a
 from utils import EMA
 from datasets import QM9
 
-# Import Ignite components for engine, metrics and early stopping
-from ignite.engine import Engine, Events
-from ignite.metrics import Average  # Use Average instead of Mean
-from ignite.handlers import EarlyStopping
-from ignite.contrib.handlers import ProgressBar  # Import the progress bar from ignite.contrib
 
 def set_seed(seed):
     torch.backends.cudnn.deterministic = True
@@ -31,6 +26,16 @@ def set_seed(seed):
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def test(model, loader, ema, device):
+    mae = 0
+    ema.assign(model)
+    for data in loader:
+        data = data.to(device)
+        output = model(data)
+        mae += (output - data.y).abs().sum().item()
+    ema.resume(model)
+    return mae / len(loader.dataset)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -44,10 +49,9 @@ def main():
     parser.add_argument('--n_layer', type=int, default=6, help='Number of hidden layers.')
     parser.add_argument('--dim', type=int, default=128, help='Size of input hidden units.')
     parser.add_argument('--batch_size', type=int, default=32, help='batch_size')
-    parser.add_argument('--target', type=int, default=7, help='Index of target for prediction')
+    parser.add_argument('--target', type=int, default="7", help='Index of target for prediction')
     parser.add_argument('--cutoff_l', type=float, default=5.0, help='cutoff in local layer')
     parser.add_argument('--cutoff_g', type=float, default=5.0, help='cutoff in global layer')
-    parser.add_argument('--patience', type=int, default=10, help='Patience for early stopping')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -58,13 +62,12 @@ def main():
     class MyTransform(object):
         def __call__(self, data):
             target = args.target
-            # Adjust target index if needed
             if target in [7, 8, 9, 10]:
                 target = target + 5
             data.y = data.y[:, target]
             return data
 
-    # Create dataset
+    # Creat dataset
     path = osp.join('.', 'data', args.dataset)
     dataset = QM9(path, transform=MyTransform()).shuffle()
 
@@ -73,9 +76,10 @@ def main():
     val_dataset = dataset[110000:120000]
     test_dataset = dataset[120000:]
 
+    # Load dataset
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
     print("Data loaded!")
 
     config = Config(dataset=args.dataset, dim=args.dim, n_layer=args.n_layer, cutoff_l=args.cutoff_l, cutoff_g=args.cutoff_g)
@@ -87,90 +91,80 @@ def main():
     else:
         model = PAMNet_s(config).to(device)
     print("Number of model parameters: ", count_parameters(model))
-
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd, amsgrad=False)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9961697)
     scheduler_warmup = GradualWarmupScheduler(optimizer, multiplier=1.0, total_epoch=1, after_scheduler=scheduler)
 
     ema = EMA(model, decay=0.999)
 
-    # --- Ignite Engines ---
-    # Training step for each batch
-    def train_step(engine, batch):
-        model.train()
-        data = batch.to(device)
-        optimizer.zero_grad()
-        output = model(data)
-        loss = F.l1_loss(output, data.y)
-        loss.backward()
-        clip_grad_norm_(model.parameters(), max_norm=1000, norm_type=2)
-        optimizer.step()
-        ema(model)
-        return loss.item()
-
-    trainer = Engine(train_step)
-
-    # Attach progress bar to trainer
-    ProgressBar().attach(trainer, output_transform=lambda x: {"loss": x})
-
-    @trainer.on(Events.ITERATION_COMPLETED)
-    def update_scheduler(engine):
-        # Calculate fractional epoch: (iteration - 1)/#iters_per_epoch
-        current_iter = engine.state.iteration
-        iters_per_epoch = len(train_loader)
-        frac_epoch = (current_iter - 1) / iters_per_epoch
-        scheduler_warmup.step(frac_epoch)
-
-    # Validation step (used for both validation and testing)
-    def validation_step(engine, batch):
-        model.eval()
-        with torch.no_grad():
-            data = batch.to(device)
-            output = model(data)
-            loss = F.l1_loss(output, data.y)
-        return loss.item()
-
-    evaluator = Engine(validation_step)
-    Average(output_transform=lambda x: x).attach(evaluator, "val_loss")
-
-    # Define early stopping based on the validation loss.
-    def score_function(engine):
-        val_loss = engine.state.metrics["val_loss"]
-        return -val_loss  # negative because EarlyStopping expects higher scores to be better
-
-    early_stopping_handler = EarlyStopping(patience=args.patience, score_function=score_function, trainer=trainer)
-    evaluator.add_event_handler(Events.COMPLETED, early_stopping_handler)
-
+    print("Start training!")
+    best_val_loss = None
     train_losses = []
     val_losses = []
+    test_losses = []
 
-    @trainer.on(Events.EPOCH_COMPLETED)
-    def run_validation(engine):
-        evaluator.run(val_loader)
-        val_loss = evaluator.state.metrics["val_loss"]
-        train_losses.append(engine.state.output)  # Using the last batch loss of the epoch
-        val_losses.append(val_loss)
-        print(f"Epoch: {engine.state.epoch:03d}, Val MAE: {val_loss:.7f}")
+    with tqdm(total=args.epochs, desc="Epochs", unit="epoch") as epoch_bar:
+        for epoch in range(args.epochs):
+            model.train()
+            loss_all = 0
+            step = 0
+            with tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}", unit="batch", leave=False) as batch_bar:
+                for data in batch_bar:
+                    data = data.to(device)
+                    optimizer.zero_grad()
 
-    print("Start training!")
-    trainer.run(train_loader, max_epochs=args.epochs)
+                    output = model(data)
+                    loss = F.l1_loss(output, data.y)
+                    loss_all += loss.item() * data.num_graphs
 
-    evaluator.run(test_loader)
-    test_loss = evaluator.state.metrics["val_loss"]
+                    loss.backward()
+                    clip_grad_norm_(model.parameters(), max_norm=1000, norm_type=2)
+                    optimizer.step()
+
+                    # Update scheduler with a fractional epoch value
+                    curr_epoch = epoch + float(step) / (len(train_dataset) / args.batch_size)
+                    scheduler_warmup.step(curr_epoch)
+
+                    ema(model)
+                    step += 1
+
+                    # Update inner progress bar with the current loss value
+                    batch_bar.set_postfix(loss=f"{loss.item():.6f}")
+
+            # Compute overall loss for the epoch
+            loss_epoch = loss_all / len(train_loader.dataset)
+            val_loss = test(model, val_loader, ema, device)
+             # Save losses for plotting
+            train_losses.append(loss_epoch)
+            val_losses.append(val_loss)
+
+            # Save best model if validation loss improves
+            save_folder = osp.join(".", "save", args.dataset)
+            if not osp.exists(save_folder):
+                os.makedirs(save_folder)
+            if best_val_loss is None or val_loss <= best_val_loss:
+                test_loss = test(model, test_loader, ema, device)
+                best_val_loss = val_loss
+                torch.save(model.state_dict(), osp.join(save_folder, "best_model.h5"))
+
+            # Log epoch metrics to console
+            tqdm.write(
+                f"Epoch: {epoch+1:03d}, Train MAE: {loss_epoch:.7f}, Val MAE: {val_loss:.7f}, Test MAE: {test_loss:.7f}"
+            )
+            # Update outer progress bar with epoch metrics
+            epoch_bar.update(1)
+            epoch_bar.set_postfix({"Train MAE": f"{loss_epoch:.7f}", "Val MAE": f"{val_loss:.7f}"})
+    print('Best Validation MAE:', best_val_loss)
     print('Testing MAE:', test_loss)
 
-    # Plot training and validation losses per epoch
     plt.figure(figsize=(10, 5))
-    plt.plot(range(1, len(val_losses) + 1), train_losses, label="Train Loss (last batch)")
-    plt.plot(range(1, len(val_losses) + 1), val_losses, label="Validation MAE")
+    plt.plot(range(1, args.epochs+1), train_losses, label="Train MAE")
+    plt.plot(range(1, args.epochs+1), val_losses, label="Validation MAE")
     plt.xlabel("Epoch")
-    plt.ylabel("Loss / MAE")
-    plt.title("Training and Validation MAE per Epoch")
+    plt.ylabel("MAE")
+    plt.title("Training, Validation and Test MAE per Epoch")
     plt.legend()
-    save_folder = osp.join(".", "save", args.dataset)
-    if not osp.exists(save_folder):
-        os.makedirs(save_folder)
-    plt.savefig(osp.join(save_folder, "train_val_mae.jpg"))
+    plt.savefig("save/train_mae.jpg")
 
 if __name__ == "__main__":
     main()
