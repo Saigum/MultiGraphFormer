@@ -113,6 +113,6 @@ class QMOF(InMemoryDataset):
         return data
 
 if __name__== '__main__':
-    dataset = QMOF("data/qmof_database")
+    dataset = QMOF("../data/qmof_database")
     for i in range(len(dataset)):
         print(dataset[i])
