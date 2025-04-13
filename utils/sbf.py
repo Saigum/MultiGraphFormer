@@ -5,7 +5,7 @@ import numpy as np
 from scipy.optimize import brentq
 from scipy import special as sp
 import sympy as sym
-
+import math 
 
 def Jn(r, n):
     return np.sqrt(np.pi / (2 * r)) * sp.jv(n + 0.5, r)
@@ -62,8 +62,8 @@ def bessel_basis(n, k):
 
 
 def sph_harm_prefactor(k, m):
-    return ((2 * k + 1) * np.math.factorial(k - abs(m)) /
-            (4 * np.pi * np.math.factorial(k + abs(m))))**0.5
+    return ((2 * k + 1) * math.factorial(k - abs(m)) /
+            (4 * np.pi * math.factorial(k + abs(m))))**0.5
 
 
 def associated_legendre_polynomials(k, zero_m_only=True):

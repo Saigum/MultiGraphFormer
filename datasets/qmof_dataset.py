@@ -10,6 +10,7 @@ import urllib.request
 import zipfile
 
 
+
 class QMOF(InMemoryDataset):
     raw_file_names = ['qmof_structure_data.json']
     processed_file_names = ['data.pt']
@@ -23,10 +24,13 @@ class QMOF(InMemoryDataset):
             cutoff (float): radius (in Å) for connecting edges
         """
         self.cutoff = cutoff
+        self.target_column = target_column
+        self.ID2NAME = {}
+        self.STRUCTURE_DATA = {}
+        self.PROPERTY_DATA = {}
         super().__init__(root, transform, pre_transform, pre_filter)
         # Load processed data
-        self.data, self.slices = torch.load(self.processed_paths[0])
-        self.target_column = target_column
+        self.data, self.slices = torch.load(self.processed_paths[0],weights_only=False)
     @property
     def raw_dir(self):
         return os.path.join(self.root, 'qmof_database')
@@ -103,7 +107,7 @@ class QMOF(InMemoryDataset):
 
         # Simple node feature: atomic number
         z = torch.tensor([site.specie.Z for site in struct], dtype=torch.long)
-        x = z.view(-1, 1).to(torch.float)
+        x = z   
 
         # Build edges by radius_graph
         neghbrs = struct.get_all_neighbors(self.cutoff,include_index=True)

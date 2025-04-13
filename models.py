@@ -102,7 +102,7 @@ class PAMNet(nn.Module):
         x_raw = data.x
         batch = data.batch
 
-        if self.dataset == "QM9":
+        if self.dataset == "QM9" or self.dataset == "QMOF":
             edge_index_l = data.edge_index
             pos = data.pos
             x = torch.index_select(self.embeddings, 0, x_raw.long())
