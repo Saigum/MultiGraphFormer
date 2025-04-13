@@ -6,6 +6,9 @@ from torch_geometric.data import InMemoryDataset, Data
 from torch_geometric.nn import radius_graph
 from pymatgen.core import Structure
 from tqdm import tqdm
+import urllib.request
+import zipfile
+
 
 class QMOF(InMemoryDataset):
     raw_file_names = ['qmof_structure_data.json']
@@ -37,10 +40,21 @@ class QMOF(InMemoryDataset):
         return os.path.join(self.root, 'processed')
 
     def download(self):
-        # Nothing to download; assume your qmof_structure_data.json
-        # is already in raw_dir.
-        pass
+        url = "https://figshare.com/ndownloader/files/51716795"
+        zip_path = "/scratch/saigum/MultiGraphFormer/data/qmof_download.zip"
+        extract_dir = "/scratch/saigum/MultiGraphFormer/data"
 
+        os.makedirs(extract_dir, exist_ok=True)
+
+        print(f"Downloading {url} to {zip_path}...")
+        urllib.request.urlretrieve(url, zip_path)
+        print("Download complete.")
+
+        print(f"Extracting {zip_path} to {extract_dir}...")
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(extract_dir)
+        print("Extraction complete.")
+        
     def process(self):
         # 1) Load your JSON
         path = os.path.join(self.raw_dir, self.raw_file_names[0])
