@@ -2,7 +2,7 @@ import os
 import json
 
 import torch
-from torch_geometric.data import InMemoryDataset, Data
+from torch_geometric.data import InMemoryDataset, Data, download_url, extract_zip
 from torch_geometric.nn import radius_graph
 from pymatgen.core import Structure
 from tqdm import tqdm
