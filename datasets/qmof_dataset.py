@@ -11,10 +11,11 @@ import zipfile
 
 
 
+
 class QMOF(InMemoryDataset):
     raw_file_names = ['qmof_structure_data.json']
     processed_file_names = ['data.pt']
-
+    
     def __init__(self, root, transform=None, pre_transform=None,
                  pre_filter=None, cutoff: float = 5.0,target_column="bandgap"):
         """
@@ -28,6 +29,9 @@ class QMOF(InMemoryDataset):
         self.ID2NAME = {}
         self.STRUCTURE_DATA = {}
         self.PROPERTY_DATA = {}
+        self.types = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
+        self.symbols = {'H': 1, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
+        self.atm_nums =[1, 6, 7, 8, 9]
         super().__init__(root, transform, pre_transform, pre_filter)
         # Load processed data
         self.data, self.slices = torch.load(self.processed_paths[0],weights_only=False)
@@ -44,21 +48,21 @@ class QMOF(InMemoryDataset):
         return os.path.join(self.root, 'processed')
 
     def download(self):
-        url = "https://figshare.com/ndownloader/files/51716795"
-        zip_path = "/scratch/saigum/MultiGraphFormer/data/qmof_download.zip"
-        extract_dir = "/scratch/saigum/MultiGraphFormer/data"
+        # url = "https://figshare.com/ndownloader/files/51716795"
+        # zip_path = "/scratch/saigum/MultiGraphFormer/data/qmof_download.zip"
+        # extract_dir = "/scratch/saigum/MultiGraphFormer/data"
 
-        os.makedirs(extract_dir, exist_ok=True)
+        # os.makedirs(extract_dir, exist_ok=True)
 
-        print(f"Downloading {url} to {zip_path}...")
-        urllib.request.urlretrieve(url, zip_path)
-        print("Download complete.")
+        # print(f"Downloading {url} to {zip_path}...")
+        # urllib.request.urlretrieve(url, zip_path)
+        # print("Download complete.")
 
-        print(f"Extracting {zip_path} to {extract_dir}...")
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(extract_dir)
-        print("Extraction complete.")
-        
+        # print(f"Extracting {zip_path} to {extract_dir}...")
+        # with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        #     zip_ref.extractall(extract_dir)
+        # print("Extraction complete.")
+        pass
     def process(self):
         # 1) Load your JSON
         path = os.path.join(self.raw_dir, self.raw_file_names[0])
@@ -106,9 +110,13 @@ class QMOF(InMemoryDataset):
         coords = torch.tensor(struct.cart_coords, dtype=torch.float)  # [N,3]
 
         # Simple node feature: atomic number
-        z = torch.tensor([site.specie.Z for site in struct], dtype=torch.long)
-        x = z   
-
+        z = []
+        for site in struct:
+            if site.specie.Z  in self.atm_nums:
+                z.append(self.types[site.specie.symbol])
+            
+        x = torch.tensor(z, dtype=torch.long)  # [N,1]    
+        # z = torch.tensor([site.specie.Z for site in struct if site.specie.Z < 10], dtype=torch.long)
         # Build edges by radius_graph
         neghbrs = struct.get_all_neighbors(self.cutoff,include_index=True)
         edge_index=[]
@@ -116,7 +124,7 @@ class QMOF(InMemoryDataset):
             for site,distance,index,image in atom:
                 edge_index.append([i,index])
 
-        edge_index = torch.tensor(edge_index,dtype=torch.int32).T
+        edge_index = torch.tensor(edge_index,dtype=torch.long).T
         row, col = edge_index
         edge_attr = (coords[row] - coords[col]).norm(dim=1, keepdim=True)
 
