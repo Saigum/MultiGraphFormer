@@ -101,14 +101,16 @@ class PAMNet(nn.Module):
     def forward(self, data):
         x_raw = data.x
         batch = data.batch
-
+        pos = data.pos
+        num_nodes = pos.size(0)
+        print(f"[DEBUG] batch_size={batch.max().item()+1}, num_nodes={num_nodes}")
+    
         if self.dataset == "QM9" or self.dataset == "QMOF":
             edge_index_l = data.edge_index
             pos = data.pos
-            x = torch.index_select(self.embeddings, 0, x_raw.long())
-
+            x = torch.index_select(self.embeddings, 0, x_raw.long().squeeze(-1))
             # Compute pairwise distances in global layer
-            row, col = radius(pos, pos, self.cutoff_g, batch, batch, max_num_neighbors=1000)
+            row, col = radius(pos, pos, self.cutoff_g, batch, batch, max_num_neighbors=64)
             edge_index_g = torch.stack([row, col], dim=0)
             edge_index_g, dist_g = self.get_edge_info(edge_index_g, pos)
 
@@ -127,6 +129,7 @@ class PAMNet(nn.Module):
 
             # Compute pairwise distances in global layer
             row, col = radius(pos, pos, self.cutoff_g, batch, batch, max_num_neighbors=1000)
+            # print(f"[DEBUG] global edges = {row.size(0)}")
             edge_index_g = torch.stack([row, col], dim=0)
             edge_index_g, dist_g = self.get_edge_info(edge_index_g, pos)
             
@@ -201,6 +204,8 @@ class PAMNet(nn.Module):
 
             x, out_l, att_score_l = self.local_layer[layer](x, edge_attr_rbf_l, edge_attr_sbf2, edge_attr_sbf1, \
                                                     idx_kj, idx_ji, idx_jj_pair, idx_ji_pair, edge_index_l)
+            # print(out_l.shape)
+            # print(att_score_l.shape)
             out_local.append(out_l)
             att_score_local.append(att_score_l)
         
@@ -213,7 +218,8 @@ class PAMNet(nn.Module):
         out = (out * att_weight).sum(dim=-1)
         out = out.sum(dim=0).unsqueeze(-1)
 
-        if self.dataset == "QM9":
+        # print(out.shape)
+        if self.dataset == "QM9" or self.dataset == "QMOF":
             out = global_add_pool(out, batch)
         elif self.dataset == "PDBbind":
             out = out * all_index.unsqueeze(-1)

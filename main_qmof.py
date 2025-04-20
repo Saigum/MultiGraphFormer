@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.nn.utils import clip_grad_norm_
-from torch_geometric.data import DataLoader
+from torch_geometric.loader import DataLoader
 from warmup_scheduler import GradualWarmupScheduler
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -45,9 +45,9 @@ def main():
     parser.add_argument('--epochs', type=int, default=300, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=1e-4, help='Initial learning rate.')
     parser.add_argument('--wd', type=float, default=0, help='Weight decay (L2 loss).')
-    parser.add_argument('--n_layer', type=int, default=6, help='Number of hidden layers.')
+    parser.add_argument('--n_layer', type=int, default=3, help='Number of hidden layers.')
     parser.add_argument('--dim', type=int, default=128, help='Dimension for embeddings.')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size.')
+    parser.add_argument('--batch_size', type=int, default=1, help='Batch size.')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -101,6 +101,10 @@ def main():
             step = 0
             with tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}", unit="batch", leave=False) as batch_bar:
                 for data in batch_bar:
+                    ## fails for more than 80 nodes
+                    
+                    # if(data.num_nodes> 80):
+                    #     continue
                     data = data.to(device)
                     optimizer.zero_grad()
                     output = model(data)
@@ -113,7 +117,7 @@ def main():
                     curr_epoch = epoch + float(step) / (len(train_dataset) / args.batch_size)
                     scheduler_warmup.step(curr_epoch)
                     
-                    ema(model)
+                    # ema(model)
                     step += 1
                     batch_bar.set_postfix(loss=f"{loss.item():.6f}")
             loss_epoch = loss_all / len(train_dataset)

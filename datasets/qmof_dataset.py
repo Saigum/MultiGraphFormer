@@ -8,6 +8,9 @@ from pymatgen.core import Structure
 from tqdm import tqdm
 import urllib.request
 import zipfile
+from torch_geometric.utils import subgraph
+import torch
+from pymatgen.core import Structure
 
 
 
@@ -48,21 +51,21 @@ class QMOF(InMemoryDataset):
         return os.path.join(self.root, 'processed')
 
     def download(self):
-        # url = "https://figshare.com/ndownloader/files/51716795"
-        # zip_path = "/scratch/saigum/MultiGraphFormer/data/qmof_download.zip"
-        # extract_dir = "/scratch/saigum/MultiGraphFormer/data"
+        url = "https://figshare.com/ndownloader/files/51716795"
+        zip_path = "/scratch/saigum/MultiGraphFormer/data/qmof_download.zip"
+        extract_dir = "/scratch/saigum/MultiGraphFormer/data"
 
-        # os.makedirs(extract_dir, exist_ok=True)
+        os.makedirs(extract_dir, exist_ok=True)
 
-        # print(f"Downloading {url} to {zip_path}...")
-        # urllib.request.urlretrieve(url, zip_path)
-        # print("Download complete.")
+        print(f"Downloading {url} to {zip_path}...")
+        urllib.request.urlretrieve(url, zip_path)
+        print("Download complete.")
 
-        # print(f"Extracting {zip_path} to {extract_dir}...")
-        # with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        #     zip_ref.extractall(extract_dir)
-        # print("Extraction complete.")
-        pass
+        print(f"Extracting {zip_path} to {extract_dir}...")
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(extract_dir)
+        print("Extraction complete.")
+        # pass
     def process(self):
         # 1) Load your JSON
         path = os.path.join(self.raw_dir, self.raw_file_names[0])
@@ -104,43 +107,59 @@ class QMOF(InMemoryDataset):
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
 
+    from torch_geometric.data import Data
+
     def get_graph(self, mol_id) -> Data:
         # Reconstruct the Pymatgen Structure
         struct = Structure.from_dict(self.STRUCTURE_DATA[mol_id])
-        coords = torch.tensor(struct.cart_coords, dtype=torch.float)  # [N,3]
+        coords = torch.tensor(struct.cart_coords, dtype=torch.float)  # [N_total,3]
 
-        # Simple node feature: atomic number
-        z = []
-        for site in struct:
-            if site.specie.Z  in self.atm_nums:
-                z.append(self.types[site.specie.symbol])
-            
-        x = torch.tensor(z, dtype=torch.long)  # [N,1]    
-        # z = torch.tensor([site.specie.Z for site in struct if site.specie.Z < 10], dtype=torch.long)
-        # Build edges by radius_graph
-        neghbrs = struct.get_all_neighbors(self.cutoff,include_index=True)
-        edge_index=[]
-        for i,atom in enumerate(neghbrs):
-            for site,distance,index,image in atom:
-                edge_index.append([i,index])
+        bool_mask = [site.specie.Z in self.atm_nums for site in struct]
+        mask = torch.tensor(bool_mask, dtype=torch.bool)
 
-        edge_index = torch.tensor(edge_index,dtype=torch.long).T
-        row, col = edge_index
-        edge_attr = (coords[row] - coords[col]).norm(dim=1, keepdim=True)
+        # 2) Node features: only for selected atoms
+        z = [ self.types[site.specie.symbol]
+            for site,keep in zip(struct, bool_mask) if keep ]
+        x = torch.tensor(z, dtype=torch.long).unsqueeze(1)  # [N_sel,1] or [N_sel,] as you like
 
+        # 3) Build full-edge list (on all atoms)
+        #    (you could also only loop over selected atoms, but subgraph is simpler)
+        neghbrs = struct.get_all_neighbors(self.cutoff, include_index=True)
+        edges = []
+        for i, nbrs in enumerate(neghbrs):
+            for site, dist, j, _ in nbrs:
+                edges.append([i, j])
+        edge_index_full = torch.tensor(edges, dtype=torch.long).t().contiguous()  # [2, E_full]
 
+        # 4) Edge attributes = distance; we'll compute on full graph too
+        row, col = edge_index_full
+        edge_attr_full = (coords[row] - coords[col]).norm(dim=1, keepdim=True)
+
+        # 5) Subgraph to selected nodes, relabeling them 0..N_sel-1
+        sub_edge_index, sub_edge_attr = subgraph(
+            mask,
+            edge_index_full,
+            edge_attr_full,
+            relabel_nodes=True,
+            num_nodes=coords.size(0)
+        )
+
+        # 6) Subset positions
+        pos = coords[mask]  # [N_sel, 3]
+
+        # 7) Target
         y = torch.tensor(self.PROPERTY_DATA[mol_id], dtype=torch.float).view(-1, 1)
 
-        data = Data(
+        return Data(
             x=x,
-            pos=coords,
-            edge_index=edge_index,
-            edge_attr=edge_attr,
+            pos=pos,
+            edge_index=sub_edge_index,
+            edge_attr=sub_edge_attr,
             y=y,
             mol_id=mol_id,
-            name=self.ID2NAME[mol_id]
+            name=self.ID2NAME[mol_id],
         )
-        return data
+
 
 if __name__== '__main__':
     dataset = QMOF("../data/qmof_database")
