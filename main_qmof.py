@@ -103,8 +103,8 @@ def main():
                 for data in batch_bar:
                     ## fails for more than 80 nodes
                     
-                    # if(data.num_nodes> 80):
-                    #     continue
+                    if(data.num_nodes> 80):
+                        continue
                     data = data.to(device)
                     optimizer.zero_grad()
                     output = model(data)
