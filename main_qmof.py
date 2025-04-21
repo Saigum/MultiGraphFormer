@@ -44,7 +44,7 @@ def main():
     parser.add_argument('--gpu', type=int, default=0, help='GPU number.')
     parser.add_argument('--seed', type=int, default=480, help='Random seed.')
     parser.add_argument('--model', type=str, default='PAMNet', choices=['PAMNet', 'PAMNet_a', 'PAMNet_s'], help='Model to be used')
-    parser.add_argument('--epochs', type=int, default=300, help='Number of epochs to train.')
+    parser.add_argument('--epochs', type=int, default=50, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=1e-4, help='Initial learning rate.')
     parser.add_argument('--wd', type=float, default=0, help='Weight decay (L2 loss).')
     parser.add_argument('--n_layer', type=int, default=3, help='Number of hidden layers.')
