@@ -103,7 +103,7 @@ class PAMNet(nn.Module):
         batch = data.batch
         pos = data.pos
         num_nodes = pos.size(0)
-        print(f"[DEBUG] batch_size={batch.max().item()+1}, num_nodes={num_nodes}")
+        # print(f"[DEBUG] batch_size={batch.max().item()+1}, num_nodes={num_nodes}")
     
         if self.dataset == "QM9" or self.dataset == "QMOF":
             edge_index_l = data.edge_index

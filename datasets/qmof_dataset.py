@@ -51,21 +51,17 @@ class QMOF(InMemoryDataset):
         return os.path.join(self.root, 'processed')
 
     def download(self):
-        url = "https://figshare.com/ndownloader/files/51716795"
-        zip_path = "/scratch/saigum/MultiGraphFormer/data/qmof_download.zip"
-        extract_dir = "/scratch/saigum/MultiGraphFormer/data"
-
-        os.makedirs(extract_dir, exist_ok=True)
-
-        print(f"Downloading {url} to {zip_path}...")
-        urllib.request.urlretrieve(url, zip_path)
-        print("Download complete.")
-
-        print(f"Extracting {zip_path} to {extract_dir}...")
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(extract_dir)
-        print("Extraction complete.")
-        # pass
+        # 1) Download ZIP into raw_dir
+        download_url(
+            url='https://figshare.com/ndownloader/files/51716795',
+            folder="/scratch/saigum/MultiGraphFormer/data/",
+            filename='qmof_download.zip',
+        )
+        # 2) Extract into raw_dir so that qmof_structure_data.json appears there
+        extract_zip(
+            path= '/scratch/saigum/MultiGraphFormer/data/qmof_download.zip',
+            folder="/scratch/saigum/MultiGraphFormer/data/",
+        )
     def process(self):
         # 1) Load your JSON
         path = os.path.join(self.raw_dir, self.raw_file_names[0])
